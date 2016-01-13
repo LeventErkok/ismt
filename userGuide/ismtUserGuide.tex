@@ -1,0 +1,326 @@
+\documentclass{article}
+\usepackage{verbatim}
+\usepackage{moreverb}
+\usepackage{fancyvrb}
+\usepackage{graphics}
+\usepackage{url}
+\usepackage{mathbbol}
+\usepackage{ifthen}
+\usepackage[pdftex]{graphicx}
+\let\verbatiminput=\verbatimtabinput
+\def\etal{{et al.~}}
+\title{A short user-guide to the {\tt ismt} tactic}
+\author{
+Levent Erk\"{o}k $\;\;\;\;$
+John Matthews\\
+\url{erkokl@gmail.com}\\
+\url{matthews.r.john@gmail.com}\\$ $\\
+}
+\date{(First release: May 19th, 2008\\\vspace*{1mm}
+Last updated: March 24th, 2011)}
+
+\newboolean{submission} %set to true for the submission versio
+\setboolean{submission}{false}
+%\setboolean{submission}{true}
+\ifthenelse
+{\boolean{submission}}
+{ \newcommand{\todo}[2]{ } } % hide todo
+{ \newcommand{\todo}[2]{ % show todo
+    \par
+    \fbox{\parbox{0.7\columnwidth}{\textbf{#1}: #2}}
+    \par               }}
+\newcommand{\silent}[1]{} % comment-out
+
+\begin{document}
+\maketitle
+
+\tableofcontents
+\section{A note on which {\tt yices} to use}
+The {\tt yices} executable that we predominantly use the {\tt ismt} tactic with must be in your path.
+Note that the latest release of {\tt yices} (version 2.0) does {\em not} support
+Yices's internal language, so you will need a 1-series release of {\tt yices} for {\tt ismt} to work. (We have tested
+against version 1.0.29.) If you maintain multiple copies of {\tt yices} on your computer, then you can
+use set the environment variable {\tt ISMT\_YICES} to tell the {\tt ismt} tactic precisely which {\tt yices}
+executable to use. The following is an example setting, adjust the path accordingly on your platform:
+\begin{verbatim}
+  $ echo ${ISMT_YICES} 
+  /usr/local/yices-1.0.29/bin/yices
+\end{verbatim}
+By using this environment variable you can have multiple versions of {\tt yices} happily coexisting on your computer,
+letting {\tt ismt} use the correct version.
+If this variable is not set, then {\tt ismt} will simply use the name {\tt yices}, which should be in your path
+and must be a 1.X release.
+
+\section{A note on Isabelle's oracle mechanism}
+Prior to Isabelle-2009 releases, Isabelle used to tag theorems that are proved via
+an oracle (such as {\tt ismt}) with the mark {\tt [!]}, clearly indicating that the
+theorem is ``trusted.'' This has changed in recent versions of Isabelle, where Proof-General no longer displays this mark next to the theorems proved via oracles. This can give a false sense of security, in particular if you have used {\tt ismt} in the past with older versions of Isabelle where you do expect to see the trusted mark.
+It turns out that Isabelle still keeps track of the oracle status, it's just a
+matter of not displaying it directly. The reasoning behind this change is explained in the following
+message:
+
+\url{https://lists.cam.ac.uk/mailman/htdig/cl-isabelle-users/2009-April/msg00079.html}
+
+In summary, one can still query the status of a theorem to ensure whether an oracle was
+used in proving it (as it would be the case with {\tt ismt}), although Proof-General
+no longer shows the mark {\tt [!]} to make it immediately obvious.
+\section{Using the {\tt ismt} tactic} \label{sec:using}
+The {\tt ismt} tactic has been designed to have a flexible user interface, allowing the user
+to make various choices. It allows the following selections:
+\begin{itemize}
+\item {\em Solver backend:} Currently we only provide a backend translator for the Yices SMT solver, however the 
+tactic is designed so that
+other solvers can be plugged-in by providing an appropriate translator. 
+
+\item {\em Choosing the model behavior:} The tactic can be instructed to either abort the proof or fail silently
+when the underlying solver generates a satisfying model for the negation of the input.
+
+\item {\em Saving the output file:} The user can instruct the {\tt ismt} tactic to save its output, mostly 
+useful for debugging/inspection purposes.
+
+\item {\em Turning on/off type-checking:} Some SMT solvers can be instructed to perform type-checking on
+their input, or skip this step for efficiency purposes. The {\tt ismt} tactic allows the user to specify
+the type-checking mode as an option.
+
+\item {\em Turning on/off debug information:} If required, the {\tt ismt} tactic can be instructed to
+produce a running narrative during translation, mainly useful for debugging/inspection purposes.
+
+\item {\em Statistics reporting:} The {\tt ismt} tactic can provide run-time information on the translation
+and backend components of the system, useful for benchmarking purposes.
+\end{itemize}
+
+In the following, we detail these parameters and show how they are used within the interactive 
+theorem proving environment of Isabelle.
+
+\subsection{Choosing the solver backend}
+The back-end solver to use can be selected using the {\tt solver} flag:
+\begin{itemize}
+\item {\em Flag:} {\tt solver}
+\item {\em Possible value:} {\tt Yices}
+\item {\em Example:} 
+\begin{verbatim}
+    by (ismt solver: Yices)
+\end{verbatim}
+\item {\em Description:} Uses the specified solver as the underlying SMT solver. 
+\item {\em Default:} If not specified, {\tt Yices} will be assumed.
+\item {\em Remarks:} The {\tt yices} executable (downloadable on the web~\cite{YicesWWW}) should
+be in user's path. Also see the note about {\tt ISMT\_YICES} environment variable above.
+\end{itemize}
+Note that this flag is currently redundant since Yices is the only backend 
+we support for the time being.
+
+\subsection{Choosing the model behavior}
+This option controls how the tactic behaves if the underlying solver returns a satisfying assignment 
+for the negation of the input, i.e., a counter-example. 
+\begin{itemize}
+\item {\em Flag:} {\tt model}
+\item {\em Possible values:} {\tt silent}, {\tt notify}, {\tt abort}
+\item {\em Examples:} 
+\begin{verbatim}
+    by (ismt model: silent)
+    by (ismt model: abort)
+\end{verbatim}
+\item {\em Description:} In the {\tt silent} mode, the proof will fail by returning the 
+Isabelle empty sequence {\tt Seq.empty}, with no further diagnostics. The
+{\tt notify} mode is similar, except the counter-example will be printed in the {\tt *trace*} buffer of
+Isabelle. If {\tt abort} is chosen, an exception will be thrown, failing the proof attempt.
+
+The main use cases for the {\tt silent} and {\tt notify} modes are in combination with other tactics. 
+For instance, a typical application of {\tt ismt} could be in combination with several other rewrite rules,
+as in the following example:
+\begin{verbatim}
+by (  rule VC_rules 
+    | simp only: VC_simps main_def Let_def 
+    | ismt model: silent)+
+\end{verbatim}
+(with appropriate definitions of {\tt VC\_simps} etc.). In this case we apply one round
+of rules and simplifications, followed by an attempt to prove by {\tt ismt}, and repeating the process until the 
+goal is simplified enough such that {\tt ismt} can resolve it, or until none of the rules kick-in, hence causing the
+proof to fail.
+\item {\em Default:} If not specified, {\tt notify} will be assumed.
+\end{itemize}
+
+\subsection{Saving the output file}
+For inspection and debugging purposes, the user might need to see the script generated by the 
+{\tt ismt} tactic that is passed along to the underlying SMT solver.
+This option allows specifying a file name for this output.
+\begin{itemize}
+\item {\em Flag:} {\tt dump}
+\item {\em Possible values:} {\em Any valid file name, or {\tt -}.}
+\item {\em Examples:} 
+\begin{verbatim}
+    by (ismt dump: "lemma.ys")
+    by (ismt dump: -)
+\end{verbatim}
+\item {\em Description:} If a file name is given, then the script will be saved in that file. The 
+character `{\tt -}' is
+interpreted as {\tt stdout}, i.e., the script will be printed out directly on the screen. 
+\item {\em Default:} If not specified, no dump file will be generated.
+\item {\em Remarks:} The generated output will also contain the input HOL formula, the output of the SMT solver
+when run, along with the counter-example translated back to HOL (if any). In this sense, it will contain enough
+information to create a complete record of the transaction, which is an important aspect from an evaluator's
+point-of-view. The generated file is also directly loadable by the underlying SMT solver, hence the corresponding
+run can be independently repeated by the user outside of the Isabelle process.
+\end{itemize}
+
+\subsection{Turning on/off type-checking}
+Some SMT solvers can be instructed to perform an extra step of type-checking on their input.
+However, such a check can incur a performance penalty, so
+these SMT solvers (and in particular Yices) also allow skipping this step for enhanced performance. The
+{\tt tc\_on} and {\tt tc\_off} flags of the {\tt ismt} tactic allows passing this information down
+to the underlying solver:
+\begin{itemize}
+\item {\em Flags:} {\tt tc\_on}, {\tt tc\_off}
+\item {\em Examples:} 
+\begin{verbatim}
+    by (ismt tc_on)
+    by (ismt tc_off)
+\end{verbatim}
+\item {\em Description:} If {\tt tc\_on} is specified, the backend solver will be instructed to perform
+type-checking on the generated input. If {\tt tc\_off} is given, type-checking will be turned off.
+\item {\em Default:} If not specified, {\tt tc\_on} is assumed.
+\item {\em Remarks:} Unless efficiency is paramount, this flag should be left at its default value, i.e., {\tt tc\_on}.
+In our test cases, we have found that the additional cost of type checking is practically negligible for the
+Yices SMT solver.
+\end{itemize}
+
+\subsection{Debugging: Tracing {\tt ismt}}
+The {\tt ismt} tactic provides a tracing mode, which is useful for debugging purposes. When
+turned on, it will print out various run-time data. Users should typically 
+avoid turning tracing on, as the
+output tends to be quite copious especially with large input formulas.
+
+\begin{itemize}
+\item {\em Flags:} {\tt debug\_on}, {\tt debug\_off} 
+\item {\em Examples:} 
+\begin{verbatim}
+    by (ismt debug_on)
+    by (ismt debug_off)
+\end{verbatim}
+\item {\em Description:} Turns on/off tracing data output.
+\item {\em Default:} If not specified, {\tt debug\_off} is assumed.
+\end{itemize}
+
+\subsection{Reporting statistics}
+The {\tt ismt} tactic can report run-times of the translator itself and the backend SMT
+solver, which
+aids in benchmarking. This behavior is controlled by the {\tt stats\_on} and {\tt stats\_off} flags:
+\begin{itemize}
+\item {\em Flags:} {\tt stats\_on}, {\tt stats\_off}
+\item {\em Examples:} 
+\begin{verbatim}
+    by (ismt stats_on)
+    by (ismt stats_off)
+\end{verbatim}
+\item {\em Description:} The {\tt stats\_on} flag turns statistics reporting on, {\tt stats\_off}
+turns it off. 
+\item {\em Default:} If not specified, {\tt stats\_off} is assumed. 
+\end{itemize}
+
+\subsection{Argument order and defaults}
+
+Multiple flags can be combined on the same line, or the same flag can be specified multiple times. In the latter
+case, the last value given will be effective. The order of the given flags is immaterial. For instance, the following
+calls are all valid:
+
+\begin{verbatim}
+    by (ismt model: silent debug_on dump: "a.ys" stats_on)
+    by (ismt dump: "a.ys" dump: "b.ys")
+\end{verbatim}
+
+In the last example the {\tt dump} flag is repeated. The tactic
+will use the second flag, hence the output will be placed in the file {\tt "b.ys"}.
+It is also possible to call {\tt ismt} with no arguments at all:
+
+\begin{verbatim}
+    apply ismt
+    by ismt
+\end{verbatim}
+
+\noindent In this case the defaults will be used for all the settings, as described
+in the preceding sections.
+
+\section{Supported constructs}
+Below, we describe the types, constants, and other HOL constructs that are
+properly understood and translated by the Yices backend. Any other construct will
+go uninterpreted, i.e., it will be translated as an uninterpreted constant in the Yices
+backend with the correct type.
+
+\begin{itemize}
+\item {\em Types.} The following types are supported:
+\begin{itemize}
+  \item Ground types: {\tt int}, {\tt nat}, {\tt bool}.
+  \item Basic HOL types: (polymorphic) lists, option type, tuples (of arbitrary arity, including {\tt unit}).
+  \item Records. (Extensible records are not supported.) 
+  \item Types introduced via datatype declarations. These types can be parameterized
+  and recursive. However, they cannot be mutually recursive, either directly or indirectly via nesting.
+  \item Functions. Note that functions {\em can} be higher-order.
+\end{itemize}
+\item{\em Constants.}
+The following HOL constants are supported:\footnote{The arithmetic operators ({\tt $+$}, {\tt $-$}, etc.), and
+comparisons ({\tt <=}, {\tt <}) are supported
+both at their {\tt int} and {\tt nat} instances. Use of arithmetic operators at
+other Isabelle numeric types will remain uninterpreted. Also note that Yices only supports linear-arithmetic 
+i.e., multiplication/division can only be done by a constant. If a non-linear expression is given to the
+translator, it will still be translated but Yices will reject the input with a failure message.}
+\begin{itemize}
+  \item Equality: {\tt =}. (Polymorphic at all types.)
+  \item Boolean operators: {\tt True}, {\tt False}, {\tt $\leq$}, {\tt $<$}, {\tt $\longrightarrow$}, {\tt $\Longrightarrow$}, 
+  {\tt $\vee$}, {\tt $\wedge$}, {\tt $\neg$}, {\tt dvd}.
+  \item Arithmetic operators:
+       {\tt $+$}, {\tt $-$}, {\tt $\times$}, {\tt $/$}, 
+       {\tt $-$} (unary minus), 
+       {\tt div}, {\tt mod}, 
+       {\tt abs}, {\tt Suc},
+       {\tt min}, {\tt max}.
+  \item Other: {\tt fst}, {\tt snd}.
+\end{itemize} 
+\item{\em Expressions and binding constructs.}
+The following constructs are supported:
+\begin{itemize}
+  \item If expressions,
+  \item Let bindings,
+  \item Lambda abstractions,
+  \item Quantifiers: $\forall$, $\exists$, $\bigwedge$ 
+  \item Case expressions (over tuples, naturals, option type, lists, and arbitrary user defined types),
+  \item Function update syntax,
+  \item Record update syntax.
+\end{itemize}
+\end{itemize}
+\newpage
+
+\section{License}
+
+\noindent Copyright \copyright 2007-2011. All rights reserved.
+
+\noindent Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+\begin{itemize}
+\item Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+\item Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+\item The name of the authors may not be used to  endorse or promote
+products derived from this software without specific prior written
+permission.
+\end{itemize}
+
+\noindent THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WAR\-RAN\-TIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+\bibliography{ismtUserGuide}
+\bibliographystyle{plain}
+\end{document}

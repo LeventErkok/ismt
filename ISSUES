@@ -1,0 +1,84 @@
+This document lists the known bugs/short-comings in the Yices bridge:
+
+1. [BUG] Eta-expansion oddities
+===============================
+  Eta-expansion needs to be sensitive with respect to Yices operators.
+  For instance, the following will currently fail to translate correctly:
+
+     lemma "(3::int) = (let f = (op +) in f 1 2)"
+     by ismt
+
+
+     (let ((f::(-> int (-> int int)) 
+           (lambda (etav::int etav_1::int) (+ etav etav_1)))) 
+	  ((f 2) 3)))
+
+   which fails to type-check in the Yices backend.
+
+   The difficulty arises since: 
+      (i) Yices has no notion of automatic currying 
+     (ii) In Yices, operators like +, -, *, etc. are actually 
+          arbitrary arity; hence:
+
+	      (+ 1 2 3)
+     
+          is OK; but that doesn't play well with HOL's +.
+
+   A solution might be to define versions of these operators in Yices 
+   that are of fixed arity.
+
+   Note that an input of the form:
+
+      lemma "(3::int) = (let f = g in f 1 2)"
+      by ismt
+
+   will *be* translated correctly, since 'g' is not a special thing
+   for Yices in this case. Notice that this has the exact same
+   structure as the above as far as the bridge is concerned, hence
+   the need for some magic here.
+
+2. [SHORTCOMING] Accessor Positions
+===================================
+  Since accessor definitions are type based only, there is currently
+  no way to define two accessors with the same type, yet have them
+  apply in different positions. We might need to implement some
+  way so that user can provide positional information.
+
+3. [BUG] Accessor Definitions
+=============================
+  Currently, there is no check to make sure a registered accessor is
+  actually a valid accessor; users can register any function whatsoever.
+  This can be used to actually fool the Yices backend to prove non-theorems!
+  We need to find a simple yet effective mechanism to detect and reject
+  such definitions.
+
+4. [SHORTCOMING] Treatment of TVar vs TFree's
+=============================================
+  In translating data-types, we currently reject the input if there is a
+  TVar in the type. TVar's should be treated just like TFree's, except
+  they have a different namespace. Currently we don't support these, but
+  it should be fairly easy to change the code to do so once we come up 
+  with a mechanism to resolve the name-space issue. (even indexes for 
+  TFree's and odd indexes for TVar's should work just fine.)
+
+5. [SHORTCOMING] Support for extensible records
+===============================================
+  Add support for extensible records. Two ways to go about this: 
+     (1) Represent extensible records via nested records. 
+     (2) Flatten them out for each instance.
+  It's not clear which way would be the best to go with, some experimentation
+  is needed to find out the best way.
+
+6. [SHORTCOMING] Support for rationals/reals
+============================================
+  Currently the translator only supports int's and nat's. Yices also
+  supports reals; which should match more or less directly with
+  Isabelle's version. If the correspondence is exact, adding them
+  can be fairly easy. 
+
+7. [SHORTCOMING] Pretty printing
+================================
+  The pretty-printing of Yices files is OK from the command line (nicely
+  indented, multiple lines etc.), but when used from emacs buffer it
+  spits out single-lines. Makes the output less readable in that latter
+  case. If indentation is important, use it from the command line!
